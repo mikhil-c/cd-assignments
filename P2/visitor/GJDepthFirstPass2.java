@@ -19,10 +19,16 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
    
    CustomType currClass = null;
    Method currMethod = null;
+   
    int varFlag = 0; // 1. PrimaryExpression sets it to 1 at the beginning and then resets to 0 before returing.
                     // 2. If it is 1, then Identifier sets it to 2
-   Stack<ArrayList<String>> argStack = new Stack<ArrayList<String>>();
    boolean isAllocation = false;
+
+   Stack<ArrayList<String>> argStack = new Stack<ArrayList<String>>();
+   
+   boolean lambdaFlag = false;
+   String lamVar = new String();
+   String lamVarType = new String();
 
    void typeError() {
        System.out.println("Type error");
@@ -34,7 +40,7 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
        System.exit(1);
    }
 
-   boolean isValidCustomType(String _type) {
+   public boolean isValidCustomType(String _type) {
        if (_type == null) {
            return false;
        }
@@ -56,7 +62,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
 
    String getIdentifierType(String variable) {
        if (currMethod != null) {
-           if (currMethod.localVar.containsKey(variable)) {
+           if (lambdaFlag && variable.equals(lamVar)) {
+               return lamVarType;
+           }
+           else if (currMethod.localVar.containsKey(variable)) {
                return currMethod.localVar.get(variable);
            }
            else if (currMethod.paramType.containsKey(variable)){
@@ -108,10 +117,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
 
    void validateArgs(Method _method, ArrayList<String> _argList) {
        ArrayList _paramList = _method.paramList;
-       if (_paramList == null && _argList == null) {
+       if (_paramList.size() == 0 && _argList == null) {
            return;
        }
-       else if (_paramList == null || _argList == null) {
+       else if (_paramList.size() == 0 || _argList == null) {
            typeError();
        }
        else {
@@ -126,6 +135,23 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
                }
            }
        }
+   }
+
+   public boolean isLambdaType(String _type) {
+       return _type.startsWith("Function");
+   }
+
+   public String getLambdaInputType(String _lambdaType) {
+
+       int i = _lambdaType.indexOf('<') + 1;
+       int j = _lambdaType.indexOf(',');
+       return _lambdaType.substring(i, j);
+   }
+
+   public String getLambdaOutputType(String _lambdaType) {
+       int i = _lambdaType.indexOf(',') + 1;
+       int j = _lambdaType.length() - 1;
+       return _lambdaType.substring(i, j);
    }
 
    public R visit(NodeList n, A argu) {
@@ -341,7 +367,7 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       n.f7.accept(this, argu);
       n.f8.accept(this, argu);
       n.f9.accept(this, argu);
-      n.f10.accept(this, argu);
+      n.f10.accept(this, (A)currMethod.returnType);
       n.f11.accept(this, argu);
       n.f12.accept(this, argu);
       currMethod = null;
@@ -482,7 +508,7 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       String variable = (String)n.f0.accept(this, argu);
       String lhsType = getIdentifierType(variable);
       n.f1.accept(this, argu);
-      String rhsType = (String)n.f2.accept(this, argu);
+      String rhsType = (String)n.f2.accept(this, (A)lhsType);
       n.f3.accept(this, argu);
       if (!isAssignable(lhsType, rhsType)) {
           typeError();
@@ -643,13 +669,34 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f4 -> Expression()
     */
    public R visit(LambdaExpression n, A argu) {
-      R _ret=null;
+      if (lambdaFlag) {
+          typeError();
+      }
+      lambdaFlag = true;
+
+      String _ret = new String();
+      
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      lamVar = (String)n.f1.accept(this, argu);
+      //if (argu == null) {
+      //    typeError();
+      //}
+      lamVarType = getLambdaInputType((String)argu);
+
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
-      n.f4.accept(this, argu);
-      return _ret;
+      
+      String _lambdaRetType = (String)n.f4.accept(this, argu);
+      String requiredRetType = getLambdaOutputType((String)argu);
+      if (!isAssignable(requiredRetType, _lambdaRetType)) {
+          typeError();
+      }
+
+      _ret = "Function<" + lamVarType + "," + requiredRetType + ">";
+      lambdaFlag = false;
+      lamVar = "";
+      lamVarType = "";
+      return (R)_ret;
    }
 
    /**
@@ -848,22 +895,67 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     */
    public R visit(MessageSend n, A argu) { // Take care of lambda
       String _ret = new String();
+      boolean isLambda = false;
+
       String _type = (String)n.f0.accept(this, argu);
+      if (isLambdaType(_type)) {
+          isLambda = true;
+      }
+      if (_type.equals("int") || _type.equals("boolean")) {
+          typeError();
+      }
+      if (_type.equals("int[]")) {
+          symbolNotFound();
+      }
+
       argStack.push(new ArrayList<String>());
+
       n.f1.accept(this, argu);
       String _methodName = (String)n.f2.accept(this, argu);
-      Method _method = getMethod(_type, _methodName);
-      n.f3.accept(this, argu);
-      n.f4.accept(this, argu);
-      n.f5.accept(this, argu);
-      if (!argStack.isEmpty()) {
-          validateArgs(_method, argStack.peek());
+      Method _method = new Method();
+      ArrayList<String> _paramList = new ArrayList<String>();
+      if (isLambda) {
+          if(!_methodName.equals("apply")) {
+              symbolNotFound();
+          }
+          _paramList.add(getLambdaInputType(_type));
       }
       else {
-          validateArgs(_method, null);
+          _method = getMethod(_type, _methodName);
+          for (int i = 0; i < _method.paramList.size(); i++) {
+              _paramList.add(_method.paramType.get(_method.paramList.get(i)));
+          }
       }
+
+      n.f3.accept(this, argu);
+      if (isLambda) {
+          n.f4.accept(this, (A)_paramList);
+      }
+      else {
+          n.f4.accept(this, (A)_paramList);
+      }
+      n.f5.accept(this, argu);
+      
+      if (isLambda) {
+          if (argStack.peek().size() != 1) {
+              typeError();
+          }
+          if (!isAssignable(getLambdaInputType(_type), argStack.peek().get(0))) {
+              typeError();
+          }
+          _ret = getLambdaOutputType(_type);
+      }
+      else {
+          if (!argStack.peek().isEmpty()) {
+              validateArgs(_method, argStack.peek());
+          }
+          else {
+              validateArgs(_method, null);
+          }
+          _ret = _method.returnType;
+      }
+
       argStack.pop();
-      _ret = _method.returnType;
       return (R)_ret;
    }
 
@@ -990,7 +1082,7 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       n.f0.accept(this, argu);
       String _ret = (String)n.f1.accept(this, argu);
       if (!isValidCustomType(_ret)) {
-          typeError();
+          symbolNotFound();
       }
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
