@@ -324,6 +324,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       R _ret = (R)r;
       n.f0.accept(this, argu);
       Return o1 = (Return)n.f1.accept(this, argu);
+      if (str != null) {
+          str.code += o1.code;
+      }
       n.f2.accept(this, argu);
       Return o2;
       if (argu == null) {
@@ -333,9 +336,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
           o2 = (Return)n.f3.accept(this, argu);
       }
       n.f4.accept(this, argu);
-      if (str != null) {
-          str.code += o1.code;
-      }
+
       r.code = o1.code + s.code + "RETURN " + o2.ret + "\n";
       r.ret = o2.ret;
       return _ret;
