@@ -14,6 +14,24 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+
+   public HashMap<String, CustomType> symbolTable = new HashMap<String, CustomType>(); // Identifier -> Class
+   public HashSet<String> declaredTypes = new HashSet<String>();
+
+   CustomType newType = null;
+   Method newMethod = null;
+   boolean importDeclFlag = false;
+
+   void typeError() {
+       System.out.println("Type error");
+       System.exit(1);
+   }
+
+   void symbolNotFound() {
+       System.out.println("Symbol not found");
+       System.exit(1);
+   }
+
    public R visit(NodeList n) {
       R _ret=null;
       int _count=0;
@@ -86,6 +104,7 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
       n.f0.accept(this);
       n.f1.accept(this);
       n.f2.accept(this);
+      importDeclFlag = true;
       return _ret;
    }
 
@@ -150,12 +169,16 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     */
    public R visit(ClassDeclaration n) {
       R _ret=null;
+      newType = new CustomType();
       n.f0.accept(this);
-      n.f1.accept(this);
+      String typeName = (String)n.f1.accept(this);
+      newType.name = typeName;
       n.f2.accept(this);
       n.f3.accept(this);
       n.f4.accept(this);
       n.f5.accept(this);
+      symbolTable.put(typeName, newType);
+      newType = null;
       return _ret;
    }
 
@@ -171,14 +194,19 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     */
    public R visit(ClassExtendsDeclaration n) {
       R _ret=null;
+      newType = new CustomType();
       n.f0.accept(this);
-      n.f1.accept(this);
+      String typeName = (String)n.f1.accept(this);
+      newType.name = typeName;
       n.f2.accept(this);
-      n.f3.accept(this);
+      String parentType = (String)n.f3.accept(this);
       n.f4.accept(this);
       n.f5.accept(this);
       n.f6.accept(this);
       n.f7.accept(this);
+      newType.parent = parentType;
+      symbolTable.put(typeName, newType);
+      newType = null;
       return _ret;
    }
 
@@ -189,9 +217,15 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     */
    public R visit(VarDeclaration n) {
       R _ret=null;
-      n.f0.accept(this);
-      n.f1.accept(this);
+      String _type = (String)n.f0.accept(this);
+      String _identifier = (String)n.f1.accept(this);
       n.f2.accept(this);
+      if (newMethod == null) { // current variable is an instance variable
+          newType.instanceVar.put(_identifier, _type);
+      }
+      else { // current variable is a local variable
+          newMethod.localVar.put(_identifier, _type);
+      }
       return _ret;
    }
 
@@ -212,9 +246,10 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     */
    public R visit(MethodDeclaration n) {
       R _ret=null;
+      newMethod = new Method();
       n.f0.accept(this);
-      n.f1.accept(this);
-      n.f2.accept(this);
+      String _returnType = (String)n.f1.accept(this);
+      String _methodName = (String)n.f2.accept(this);
       n.f3.accept(this);
       n.f4.accept(this);
       n.f5.accept(this);
@@ -225,6 +260,10 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
       n.f10.accept(this);
       n.f11.accept(this);
       n.f12.accept(this);
+      newMethod.name = _methodName;
+      newMethod.returnType = _returnType;
+      newType.method.put(_methodName, newMethod);
+      newMethod = null;
       return _ret;
    }
 
@@ -245,8 +284,10 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     */
    public R visit(FormalParameter n) {
       R _ret=null;
-      n.f0.accept(this);
-      n.f1.accept(this);
+      String _type = (String)n.f0.accept(this);
+      String _parameter = (String)n.f1.accept(this);
+      newMethod.paramList.add(_parameter);
+      newMethod.paramType.put(_parameter, _type);
       return _ret;
    }
 
@@ -269,8 +310,11 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     *       | LambdaType()
     */
    public R visit(Type n) {
-      R _ret=null;
-      n.f0.accept(this);
+      R _ret = n.f0.accept(this);
+      String _type = (String)_ret;
+      if ((!_type.equals("int")) && (!_type.equals("boolean")) && (!_type.equals("int[]"))) {
+          declaredTypes.add(_type);
+      }
       return _ret;
    }
 
@@ -280,29 +324,29 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     * f2 -> "]"
     */
    public R visit(ArrayType n) {
-      R _ret=null;
+      String _ret = "int[]";
       n.f0.accept(this);
       n.f1.accept(this);
       n.f2.accept(this);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
     * f0 -> "boolean"
     */
    public R visit(BooleanType n) {
-      R _ret=null;
+      String _ret = "boolean";
       n.f0.accept(this);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
     * f0 -> "int"
     */
    public R visit(IntegerType n) {
-      R _ret=null;
+      String _ret = "int";
       n.f0.accept(this);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
@@ -314,14 +358,36 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     * f5 -> ">"
     */
    public R visit(LambdaType n) {
-      R _ret=null;
+      if (!importDeclFlag) {
+          symbolNotFound();
+      }
+      String _ret = new String();
       n.f0.accept(this);
       n.f1.accept(this);
-      n.f2.accept(this);
+      String type1 = (String)n.f2.accept(this);
+      if (type1.equals("int") || type1.equals("boolean")) {
+          typeError();
+      }
+      if (type1.equals("Integer")) {
+          type1 = "int";
+      }
+      if (type1.equals("Boolean")) {
+          type1 = "boolean";
+      }
       n.f3.accept(this);
-      n.f4.accept(this);
+      String type2 = (String)n.f4.accept(this);
+      if (type2.equals("int") || type2.equals("boolean")) {
+          typeError();
+      }
+      if (type2.equals("Integer")) {
+          type2 = "int";
+      }
+      if (type2.equals("Boolean")) {
+          type2 = "boolean";
+      }
       n.f5.accept(this);
-      return _ret;
+      _ret = "Function<" + type1 + "," + type2 + ">";
+      return (R)_ret;
    }
 
    /**
@@ -728,9 +794,8 @@ public class GJNoArguDepthFirstPass1<R> implements GJNoArguVisitor<R> {
     * f0 -> <IDENTIFIER>
     */
    public R visit(Identifier n) {
-      R _ret=null;
-      n.f0.accept(this);
-      return _ret;
+      String _ret = n.f0.toString();
+      return (R)_ret;
    }
 
    /**
