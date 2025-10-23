@@ -17,6 +17,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
    public HashMap<String, ClassMemLayout> memLayout = new HashMap<>(); // class name -> ClassMemLayout object
    ClassMemLayout currClass = null;
+   int methodFlag = 0;
    int fieldIndex = 4; // vtable ptr is stored at index 0, so variables start from index 4
    int methodIndex = 0;
 
@@ -30,12 +31,18 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
            ClassMemLayout parent = memLayout.get(curr.parent);
            
            HashMap<String, Integer> newFields = new HashMap<>(parent.fields);
-           int i = newFields.size() * 4;
+           int i = newFields.size() * 4 + 4;
            for (String field : curr.fields.keySet()) {
                newFields.put(field, i);
                i += 4;
            }
            curr.fields = newFields;
+
+           HashMap<String, String> newDeclClass = new HashMap<>(parent.declClass);
+           for (String method : curr.vtable.keySet()) {
+               newDeclClass.put(method, u);
+           }
+           curr.declClass = newDeclClass;
 
            HashMap<String, Integer> newVtable = new HashMap<>(parent.vtable);
            i = newVtable.size() * 4;
@@ -51,7 +58,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
            curr.vtable = newVtable;
        }
 
-       if (!adj.containsKey(curr.name)) {
+       if (!adj.containsKey(u)) {
            return;
        }
 
@@ -267,8 +274,10 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       fieldName += (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
 
-      currClass.fields.put(fieldName, fieldIndex);
-      fieldIndex += 4;
+      if (methodFlag == 0) {
+          currClass.fields.put(fieldName, fieldIndex);
+          fieldIndex += 4;
+      }
       return _ret;
    }
 
@@ -288,6 +297,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f12 -> "}"
     */
    public R visit(MethodDeclaration n, A argu) {
+      methodFlag = 1;
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
@@ -303,8 +313,10 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       n.f11.accept(this, argu);
       n.f12.accept(this, argu);
 
+      currClass.declClass.put(methodName, currClass.name);
       currClass.vtable.put(methodName, methodIndex);
       methodIndex += 4;
+      methodFlag = 0;
       return _ret;
    }
 

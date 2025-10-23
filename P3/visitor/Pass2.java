@@ -1109,7 +1109,6 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
 
       String L_while = genLabel();
       String L_end = genLabel();
-      String L_error = genLabel();
 
       String t1 = genTemp();
       String i = genTemp();
@@ -1117,11 +1116,10 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
       System.out.println("BEGIN");
       System.out.println("    MOVE " + t);
       System.out.println("BEGIN");
-      System.out.println("    CJUMP LE 0 ");
+      System.out.println("    MOVE " + t1 + " HALLOCATE TIMES PLUS ");
       String sz = (String)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
-      System.out.println(" " + L_error);
-      System.out.println("    MOVE " + t1 + " HALLOCATE TIMES PLUS " + sz + " 1 4");
+      System.out.println(" 1 4");
       System.out.println("    HSTORE " + t1 + " 0 " + sz);
 
       System.out.println("    MOVE " + i + " 4");
@@ -1133,9 +1131,6 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
       System.out.println("    MOVE " + i + " PLUS " + i + " 4");
       System.out.println("    JUMP " + L_while);
       System.out.println("    JUMP " + L_end);
-
-      System.out.println(L_error + " NOOP");
-      System.out.println("    ERROR");
 
       System.out.println(L_end + " NOOP");
       System.out.println("    RETURN " + t1);
@@ -1191,7 +1186,7 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
       System.out.println("    CJUMP LE 4 " + sz2 + " " + L_return);
       System.out.println("    MOVE " + t2 + " HALLOCATE " + sz2); // vtable
       for (Map.Entry<String, Integer> entry : _typeLayout.vtable.entrySet()) {
-          String _label = _type + "_" + entry.getKey();
+          String _label = _typeLayout.declClass.get(entry.getKey()) + "_" + entry.getKey();
           Integer _index = entry.getValue();
           System.out.println("    HSTORE " + t2 + " " + _index + " " + _label);
       }
