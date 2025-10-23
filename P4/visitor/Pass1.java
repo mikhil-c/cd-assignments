@@ -26,9 +26,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
        String argList;
    }
 
-   int tempCounter = 0;
+   int tempCounter = 10000;
    String genTemp() {
-       ++tempCounter;
+       --tempCounter;
        return "TEMP " + tempCounter;
    }
 
