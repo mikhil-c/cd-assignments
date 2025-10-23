@@ -14,8 +14,31 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+
+   class Return {
+       Return() {
+           code = new String();
+           ret = new String();
+           argList = new String();
+       }
+       String code;
+       String ret;
+       String argList;
+   }
+
+   int tempCounter = 0;
+   String genTemp() {
+       ++tempCounter;
+       return "TEMP " + tempCounter;
+   }
+
+   HashMap<String, String> tempMap = new HashMap<>(); // temporary to temporary
+   String argStr = new String();
+
    public R visit(NodeList n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       int _count=0;
       for ( Enumeration<Node> e = n.elements(); e.hasMoreElements(); ) {
          e.nextElement().accept(this,argu);
@@ -25,37 +48,56 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    }
 
    public R visit(NodeListOptional n, A argu) {
+      Return r = new Return();
+
+      R _ret = (R)r;
       if ( n.present() ) {
-         R _ret=null;
          int _count=0;
          for ( Enumeration<Node> e = n.elements(); e.hasMoreElements(); ) {
-            e.nextElement().accept(this,argu);
+            Return obj = (Return)e.nextElement().accept(this,argu);
+            r.code += obj.code;
+            if (obj.ret.startsWith("TEMP")) {
+                r.argList += obj.ret + " ";
+            }
+            else if (!obj.ret.equals("")) {
+                String _temp = genTemp();
+                argStr += "MOVE " + _temp + " " + obj.ret + "\n";
+                r.argList += _temp + " ";
+            }
             _count++;
          }
-         return _ret;
       }
-      else
-         return null;
+      return _ret;
    }
 
    public R visit(NodeOptional n, A argu) {
-      if ( n.present() )
-         return n.node.accept(this,argu);
-      else
-         return null;
+      Return r = new Return();
+
+      if ( n.present() ) {
+         r = (Return)n.node.accept(this,argu);
+         r.code = r.ret + "\n";
+         r.ret = "";
+      }
+      return (R)r;
    }
 
    public R visit(NodeSequence n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       int _count=0;
       for ( Enumeration<Node> e = n.elements(); e.hasMoreElements(); ) {
-         e.nextElement().accept(this,argu);
+         Return obj = (Return)e.nextElement().accept(this,argu);
+         r.code += obj.code;
          _count++;
       }
       return _ret;
    }
 
-   public R visit(NodeToken n, A argu) { return null; }
+   public R visit(NodeToken n, A argu) { 
+       Return r = new Return();
+       return (R)r;
+   }
 
    //
    // User-generated visitor methods below
@@ -71,10 +113,15 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(Goal n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o2 = (Return)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      System.out.println("MAIN");
+      System.out.print(o1.code);
+      System.out.println("END\n");
+      System.out.println(o2.code);
       return _ret;
    }
 
@@ -82,8 +129,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> ( ( Label() )? Stmt() )*
     */
    public R visit(StmtList n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -95,12 +141,16 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f4 -> StmtExp()
     */
    public R visit(Procedure n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      Return o1 = (Return)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return o2 = (Return)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
-      n.f4.accept(this, argu);
+      Return o3 = (Return)n.f4.accept(this, argu);
+
+      r.code = o1.ret + " [" + o2.ret + "] BEGIN\n" + o3.code + "END\n";
       return _ret;
    }
 
@@ -115,8 +165,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     *       | PrintStmt()
     */
    public R visit(Stmt n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -124,8 +173,11 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> "NOOP"
     */
    public R visit(NoOpStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
+      r.code = "NOOP\n";
       return _ret;
    }
 
@@ -133,8 +185,11 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> "ERROR"
     */
    public R visit(ErrorStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
+      r.code = "ERROR\n";
       return _ret;
    }
 
@@ -144,10 +199,14 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f2 -> Label()
     */
    public R visit(CJumpStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, (A)s);
+      Return o2 = (Return)n.f2.accept(this, argu);
+      r.code = s.code + "CJUMP " + o1.ret + " " + o2.ret + "\n";
       return _ret;
    }
 
@@ -156,9 +215,12 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f1 -> Label()
     */
    public R visit(JumpStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return obj = (Return)n.f1.accept(this, argu);
+      r.code = "JUMP " + obj.ret + "\n";
       return _ret;
    }
 
@@ -169,11 +231,16 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f3 -> Exp()
     */
    public R visit(HStoreStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s1 = new Return();
+      Return s2 = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, (A)s1);
+      Return o2 = (Return)n.f2.accept(this, argu);
+      Return o3 = (Return)n.f3.accept(this, (A)s2);
+      r.code = s1.code + s2.code +  "HSTORE " + o1.ret + " " + o2.ret + " " + o3.ret + "\n";
       return _ret;
    }
 
@@ -184,11 +251,15 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f3 -> IntegerLiteral()
     */
    public R visit(HLoadStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+      Return o2 = (Return)n.f2.accept(this, (A)s);
+      Return o3 = (Return)n.f3.accept(this, argu);
+      r.code = s.code + "HLOAD " + o1.ret + " " + o2.ret + " " + o3.ret + "\n";
       return _ret;
    }
 
@@ -198,10 +269,14 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f2 -> Exp()
     */
    public R visit(MoveStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+      Return o2 = (Return)n.f2.accept(this, (A)s);
+      r.code = s.code + "MOVE " + o1.ret + " " + o2.ret + "\n";
       return _ret;
    }
 
@@ -210,9 +285,13 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f1 -> Exp()
     */
    public R visit(PrintStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return obj = (Return)n.f1.accept(this, (A)s);
+      r.code = s.code + "PRINT " + obj.ret + "\n";
       return _ret;
    }
 
@@ -226,8 +305,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     *       | Label()
     */
    public R visit(Exp n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -239,12 +317,27 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f4 -> "END"
     */
    public R visit(StmtExp n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = new Return();
+      Return str = (Return)argu;
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o2;
+      if (argu == null) {
+          o2 = (Return)n.f3.accept(this, (A)s);
+      }
+      else {
+          o2 = (Return)n.f3.accept(this, argu);
+      }
       n.f4.accept(this, argu);
+      if (str != null) {
+          str.code += o1.code;
+      }
+      r.code = o1.code + s.code + "RETURN " + o2.ret + "\n";
+      r.ret = o2.ret;
       return _ret;
    }
 
@@ -256,12 +349,24 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f4 -> ")"
     */
    public R visit(Call n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = (Return)argu;
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o2 = (Return)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      String t1 = genTemp();
+
+      if (s != null) {
+          s.code += argStr; 
+          s.code += "MOVE " + t1 + " CALL " + o1.ret + " ( " + o2.argList + ")\n";
+      }
+      argStr = "";
+      r.ret = t1;
       return _ret;
    }
 
@@ -270,9 +375,19 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f1 -> Exp()
     */
    public R visit(HAllocate n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = (Return)argu;
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+
+      String t1 = genTemp();
+
+      if (s != null) {
+          s.code += "MOVE " + t1 + " HALLOCATE " + o1.ret + "\n";
+      }
+      r.ret = t1;
       return _ret;
    }
 
@@ -282,10 +397,20 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f2 -> Exp()
     */
    public R visit(BinOp n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return r = new Return();
+      Return s = (Return)argu;
+
+      R _ret = (R)r;
+      Return o1 = (Return)n.f0.accept(this, argu);
+      Return o2 = (Return)n.f1.accept(this, argu);
+      Return o3 = (Return)n.f2.accept(this, argu);
+
+      String t1 = genTemp();
+
+      if (s != null) {
+          s.code += "MOVE " + t1 + " " + o1.code + " " + o2.ret + " " + o3.ret + "\n";
+      }
+      r.ret = t1;
       return _ret;
    }
 
@@ -298,8 +423,17 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     *       | "DIV"
     */
    public R visit(Operator n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      switch(n.f0.which) {
+          case 0: r.code = "LE"; break;
+          case 1: r.code = "NE"; break;
+          case 2: r.code = "PLUS"; break;
+          case 3: r.code = "MINUS"; break;
+          case 4: r.code = "TIMES"; break;
+          case 5: r.code = "DIV"; break;
+      }
+      R _ret = (R)r;
       return _ret;
    }
 
@@ -308,9 +442,22 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f1 -> IntegerLiteral()
     */
    public R visit(Temp n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return obj = (Return)n.f1.accept(this, argu);
+      /*
+      String temp = "TEMP " + obj.ret;
+      if (tempMap.containsKey(temp)) {
+          r.ret = tempMap.get(temp);
+      }
+      else {
+          r.ret = genTemp();
+          tempMap.put(temp, r.ret);
+      }
+      */
+      r.ret = "TEMP " + obj.ret;
       return _ret;
    }
 
@@ -318,8 +465,10 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> <INTEGER_LITERAL>
     */
    public R visit(IntegerLiteral n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      r.ret = n.f0.toString();
       return _ret;
    }
 
@@ -327,8 +476,10 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> <IDENTIFIER>
     */
    public R visit(Label n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      r.ret = n.f0.toString();
       return _ret;
    }
 
