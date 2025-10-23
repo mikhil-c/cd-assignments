@@ -14,6 +14,120 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+   
+   public HashMap<String, CustomType> symbolTable = new HashMap<String, CustomType>(); // Identifier -> Class
+   
+   CustomType currClass = null;
+   Method currMethod = null;
+   int varFlag = 0; // 1. PrimaryExpression sets it to 1 at the beginning and then resets to 0 before returing.
+                    // 2. If it is 1, then Identifier sets it to 2
+   Stack<ArrayList<String>> argStack = new Stack<ArrayList<String>>();
+   boolean isAllocation = false;
+
+   void typeError() {
+       System.out.println("Type error");
+       System.exit(1);
+   }
+
+   void symbolNotFound() {
+       System.out.println("Symbol not found");
+       System.exit(1);
+   }
+
+   boolean isValidCustomType(String _type) {
+       if (_type == null) {
+           return false;
+       }
+       return symbolTable.containsKey(_type);
+   }
+
+   String getInstanceVarType(String variable) {
+       String _type = currClass.name;
+       while (_type != null && isValidCustomType(_type)) {
+           CustomType _currClass = symbolTable.get(_type);
+           if (_currClass.instanceVar.containsKey(variable)) {
+               return _currClass.instanceVar.get(variable);
+           }
+           _type = _currClass.parent;
+       }
+       symbolNotFound();
+       return null;
+   }
+
+   String getIdentifierType(String variable) {
+       if (currMethod != null) {
+           if (currMethod.localVar.containsKey(variable)) {
+               return currMethod.localVar.get(variable);
+           }
+           else if (currMethod.paramType.containsKey(variable)){
+               return currMethod.paramType.get(variable);
+           }
+           else {
+               return getInstanceVarType(variable);
+           }
+       }
+       else {
+           return getInstanceVarType(variable);
+       }
+   }
+
+   boolean isAssignable(String lhs, String rhs) {
+       if (lhs.equals(rhs)) {
+           return true;
+       }
+       else if (isValidCustomType(lhs)) {
+           while (rhs != null && isValidCustomType(rhs)) {
+               if (rhs.equals(lhs)) {
+                   return true;
+               }
+               CustomType _currClass = symbolTable.get(rhs);
+               rhs = _currClass.parent;
+           }
+           return false;
+       }
+       else {
+           return false;
+       }
+   }
+
+   boolean areCompatible(String _type1, String _type2) {
+       return isAssignable(_type1, _type2) || isAssignable(_type2, _type1);
+   }
+
+   Method getMethod(String _type, String _methodName) {
+       while (_type != null && isValidCustomType(_type)) {
+           CustomType _currClass = symbolTable.get(_type);
+           if (_currClass.method.containsKey(_methodName)) {
+               return _currClass.method.get(_methodName);
+           }
+           _type = _currClass.parent;
+       }
+       symbolNotFound();
+       return null;
+   }
+
+   void validateArgs(Method _method, ArrayList<String> _argList) {
+       ArrayList _paramList = _method.paramList;
+       if (_paramList == null && _argList == null) {
+           return;
+       }
+       else if (_paramList == null || _argList == null) {
+           typeError();
+       }
+       else {
+           if (_paramList.size() != _argList.size()) {
+               typeError();
+           }
+           for (int i = 0; i < _paramList.size(); i++) {
+               String _lhs = _method.paramType.get(_paramList.get(i));
+               String _rhs = _argList.get(i);
+               if (!isAssignable(_lhs, _rhs)) {
+                   typeError();
+               }
+           }
+       }
+   }
+
    public R visit(NodeList n, A argu) {
       R _ret=null;
       int _count=0;
@@ -151,11 +265,13 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
    public R visit(ClassDeclaration n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String className = (String)n.f1.accept(this, argu);
+      currClass = symbolTable.get(className);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
+      currClass = null;
       return _ret;
    }
 
@@ -172,13 +288,15 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
    public R visit(ClassExtendsDeclaration n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String className = (String)n.f1.accept(this, argu);
+      currClass = symbolTable.get(className);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
       n.f6.accept(this, argu);
       n.f7.accept(this, argu);
+      currClass = null;
       return _ret;
    }
 
@@ -214,7 +332,8 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String methodName = (String)n.f2.accept(this, argu);
+      currMethod = currClass.method.get(methodName);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
@@ -225,6 +344,7 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       n.f10.accept(this, argu);
       n.f11.accept(this, argu);
       n.f12.accept(this, argu);
+      currMethod = null;
       return _ret;
    }
 
@@ -359,10 +479,14 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     */
    public R visit(AssignmentStatement n, A argu) {
       R _ret=null;
-      n.f0.accept(this, argu);
+      String variable = (String)n.f0.accept(this, argu);
+      String lhsType = getIdentifierType(variable);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String rhsType = (String)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
+      if (!isAssignable(lhsType, rhsType)) {
+          typeError();
+      }
       return _ret;
    }
 
@@ -377,12 +501,22 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     */
    public R visit(ArrayAssignmentStatement n, A argu) {
       R _ret=null;
-      n.f0.accept(this, argu);
+      String variable = (String)n.f0.accept(this, argu);
+      String varType = getIdentifierType(variable);
+      if (!varType.equals("int[]")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String index = (String)n.f2.accept(this, argu);
+      if (!index.equals("int")) {
+          typeError();
+      }
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
-      n.f5.accept(this, argu);
+      String rhsType = (String)n.f5.accept(this, argu);
+      if (!rhsType.equals("int")) {
+          typeError();
+      }
       n.f6.accept(this, argu);
       return _ret;
    }
@@ -408,7 +542,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String conditionType = (String)n.f2.accept(this, argu);
+      if (!conditionType.equals("boolean")) {
+          typeError();
+      }
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       return _ret;
@@ -427,7 +564,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String conditionType = (String)n.f2.accept(this, argu);
+      if (!conditionType.equals("boolean")) {
+          typeError();
+      }
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
@@ -446,7 +586,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String conditionType = (String)n.f2.accept(this, argu);
+      if (!conditionType.equals("boolean")) {
+          typeError();
+      }
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       return _ret;
@@ -463,7 +606,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String expType = (String)n.f2.accept(this, argu);
+      if (!expType.equals("int")) {
+          typeError();
+      }
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       return _ret;
@@ -485,8 +631,7 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     *       | PrimaryExpression()
     */
    public R visit(Expression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -513,11 +658,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(AndExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "boolean";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("boolean")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("boolean")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -526,11 +677,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(OrExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "boolean";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("boolean")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("boolean")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -539,11 +696,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(CompareExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "boolean";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("int")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("int")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -552,11 +715,14 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(neqExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "boolean";
+      String type1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type1.equals(type2) && !(isValidCustomType(type1) && isValidCustomType(type2) && areCompatible(type1, type2))) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -565,11 +731,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(AddExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "int";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("int")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("int")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -578,11 +750,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(MinusExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "int";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("int")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("int")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -591,11 +769,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(TimesExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "int";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("int")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("int")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -604,11 +788,17 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(DivExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "int";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("int")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      return _ret;
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("int")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -618,12 +808,18 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f3 -> "]"
     */
    public R visit(ArrayLookup n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "int";
+      String type1 = (String)n.f0.accept(this, argu);
+      if (!type1.equals("int[]")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String type2 = (String)n.f2.accept(this, argu);
+      if (!type2.equals("int")) {
+          typeError();
+      }
       n.f3.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
@@ -632,11 +828,14 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> "length"
     */
    public R visit(ArrayLength n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String _ret = "int";
+      String _type = (String)n.f0.accept(this, argu);
+      if (!_type.equals("int[]")) {
+          typeError();
+      }
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
@@ -647,15 +846,25 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f4 -> ( ExpressionList() )?
     * f5 -> ")"
     */
-   public R visit(MessageSend n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+   public R visit(MessageSend n, A argu) { // Take care of lambda
+      String _ret = new String();
+      String _type = (String)n.f0.accept(this, argu);
+      argStack.push(new ArrayList<String>());
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String _methodName = (String)n.f2.accept(this, argu);
+      Method _method = getMethod(_type, _methodName);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
-      return _ret;
+      if (!argStack.isEmpty()) {
+          validateArgs(_method, argStack.peek());
+      }
+      else {
+          validateArgs(_method, null);
+      }
+      argStack.pop();
+      _ret = _method.returnType;
+      return (R)_ret;
    }
 
    /**
@@ -664,7 +873,8 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     */
    public R visit(ExpressionList n, A argu) {
       R _ret=null;
-      n.f0.accept(this, argu);
+      String _argType = (String)n.f0.accept(this, argu);
+      argStack.peek().add(_argType);
       n.f1.accept(this, argu);
       return _ret;
    }
@@ -676,7 +886,8 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
    public R visit(ExpressionRest n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _argType = (String)n.f1.accept(this, argu);
+      argStack.peek().add(_argType);
       return _ret;
    }
 
@@ -692,8 +903,12 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     *       | BracketExpression()
     */
    public R visit(PrimaryExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      varFlag = 1;
+      R _ret = n.f0.accept(this, argu);
+      if (varFlag == 2) { // have to return the type of the identifier (which is variable in this case)
+          _ret = (R)getIdentifierType((String)_ret);
+      }
+      varFlag = 0;
       return _ret;
    }
 
@@ -701,45 +916,47 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f0 -> <INTEGER_LITERAL>
     */
    public R visit(IntegerLiteral n, A argu) {
-      R _ret=null;
+      String _ret = "int";
       n.f0.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
     * f0 -> "true"
     */
    public R visit(TrueLiteral n, A argu) {
-      R _ret=null;
+      String _ret = "boolean";
       n.f0.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
     * f0 -> "false"
     */
    public R visit(FalseLiteral n, A argu) {
-      R _ret=null;
+      String _ret = "boolean";
       n.f0.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
     * f0 -> <IDENTIFIER>
     */
    public R visit(Identifier n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
-      return _ret;
+      if (varFlag == 1 && !isAllocation) {
+          varFlag = 2;
+      }
+      String _ret = n.f0.toString();
+      return (R)_ret;
    }
 
    /**
     * f0 -> "this"
     */
    public R visit(ThisExpression n, A argu) {
-      R _ret=null;
       n.f0.accept(this, argu);
-      return _ret;
+      String _ret = currClass.name;
+      return (R)_ret;
    }
 
    /**
@@ -750,13 +967,16 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f4 -> "]"
     */
    public R visit(ArrayAllocationExpression n, A argu) {
-      R _ret=null;
+      String _ret = "int[]";
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      String expType = (String)n.f3.accept(this, argu);
+      if (!expType.equals("int")) {
+          typeError();
+      }
       n.f4.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
    /**
@@ -766,12 +986,16 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f3 -> ")"
     */
    public R visit(AllocationExpression n, A argu) {
-      R _ret=null;
+      isAllocation = true;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _ret = (String)n.f1.accept(this, argu);
+      if (!isValidCustomType(_ret)) {
+          typeError();
+      }
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
-      return _ret;
+      isAllocation = false;
+      return (R)_ret;
    }
 
    /**
@@ -779,10 +1003,12 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f1 -> Expression()
     */
    public R visit(NotExpression n, A argu) {
-      R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      return _ret;
+      String _ret = (String)n.f1.accept(this, argu);
+      if (!_ret.equals("boolean")) {
+          typeError();
+      }
+      return (R)_ret;
    }
 
    /**
@@ -791,11 +1017,10 @@ public class GJDepthFirstPass2<R,A> implements GJVisitor<R,A> {
     * f2 -> ")"
     */
    public R visit(BracketExpression n, A argu) {
-      R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _ret = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
 }
