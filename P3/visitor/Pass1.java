@@ -14,6 +14,52 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+
+   HashMap<String, ClassMemLayout> memLayout = new HashMap<>(); // class name -> ClassMemLayout object
+   ClassMemLayout currClass = null;
+   int fieldIndex = 0;
+   int methodIndex = 0;
+
+   // Stuff for DFS
+   HashMap<String, ArrayList<String>> adj = new HashMap<>();    // adjacent matrix of the graph formed by the classes
+   ArrayList<String> rootClasses = new ArrayList<>();           // stores all the names of the classes whose parent is null
+
+   void DFS(String u) {
+       ClassMemLayout curr = memLayout.get(u);
+       if (curr.parent != null) {
+           ClassMemLayout parent = memLayout.get(curr.parent);
+           
+           HashMap<String, Integer> newFields = new HashMap<>(parent.fields);
+           int i = newFields.size() * 4;
+           for (String field : curr.fields.keySet()) {
+               newFields.put(field, i);
+               i += 4;
+           }
+           curr.fields = newFields;
+
+           HashMap<String, Integer> newVtable = new HashMap<>(parent.vtable);
+           i = newVtable.size() * 4;
+           for (String method : curr.vtable.keySet()) {
+               if (newVtable.containsKey(method)) {
+                   newVtable.put(method, curr.vtable.get(method));
+               }
+               else {
+                   newVtable.put(method, i);
+                   i += 4;
+               }
+           }
+           curr.vtable = newVtable;
+       }
+
+       if (!adj.containsKey(curr.name)) {
+           return;
+       }
+
+       for (String v : adj.get(u)) {
+           DFS(v);
+       }
+   }
+
    public R visit(NodeList n, A argu) {
       R _ret=null;
       int _count=0;
@@ -73,6 +119,10 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
+
+      for (String root : rootClasses) {
+          DFS(root);
+      }
       return _ret;
    }
 
@@ -149,13 +199,23 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f5 -> "}"
     */
    public R visit(ClassDeclaration n, A argu) {
+      currClass = new ClassMemLayout();
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      currClass.name = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
+
+      rootClasses.add(currClass.name);
+
+      memLayout.put(currClass.name, currClass);
+      currClass = null;
+      fieldIndex = 0;
+      methodIndex = 0;
+
       return _ret;
    }
 
@@ -170,15 +230,27 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f7 -> "}"
     */
    public R visit(ClassExtendsDeclaration n, A argu) {
+      currClass = new ClassMemLayout();
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      currClass.name = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      currClass.parent = (String)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
       n.f6.accept(this, argu);
       n.f7.accept(this, argu);
+
+      if (!adj.containsKey(currClass.parent)) {
+          adj.put(currClass.parent, new ArrayList<String>());
+      }
+      adj.get(currClass.parent).add(currClass.name);
+
+      memLayout.put(currClass.name, currClass);
+      currClass = null;
+      fieldIndex = 0;
+      methodIndex = 0;
       return _ret;
    }
 
@@ -188,10 +260,15 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f2 -> ";"
     */
    public R visit(VarDeclaration n, A argu) {
+      String fieldName = currClass.name + "_";  // Fields are stored as "ClassName_ActualFieldName"
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      fieldName += (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+
+      currClass.fields.put(fieldName, fieldIndex);
+      fieldIndex += 4;
       return _ret;
    }
 
@@ -214,7 +291,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String methodName = (String)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
@@ -225,6 +302,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       n.f10.accept(this, argu);
       n.f11.accept(this, argu);
       n.f12.accept(this, argu);
+
+      currClass.vtable.put(methodName, methodIndex);
+      methodIndex += 4;
       return _ret;
    }
 
@@ -728,8 +808,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> <IDENTIFIER>
     */
    public R visit(Identifier n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = (R)n.f0.toString();
       return _ret;
    }
 
