@@ -14,6 +14,103 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+
+   int temporaryCounter = 300; // (If I have time) I have to find the max no.of parameters that a function takes in a program from the first pass
+   String genTemp() {
+       ++temporaryCounter;
+       return "TEMP " + temporaryCounter;
+   }
+
+   int labelCounter = 0;
+   String genLabel() {
+       ++labelCounter;
+       return "L" + labelCounter;
+   }
+
+   public HashMap<String, CustomType> symbolTable = new HashMap<>();
+   public HashMap<String, ClassMemLayout> memLayout = new HashMap<>();
+
+   class Attributes {
+       Attributes() {
+           type = new String();
+           declaredClass = new String();
+       }
+       String type;
+       String declaredClass;
+   }
+
+   CustomType currClass = null;
+   Method currMethod = null;
+
+   String getInstanceVarType(String variable) {
+       if (currClass == null) {
+           return "";
+       }
+       String _type = currClass.name;
+       while (_type != null) {
+           CustomType _currClass = symbolTable.get(_type);
+           if (_currClass.instanceVar.containsKey(variable)) {
+               return _currClass.instanceVar.get(variable);
+           }
+           _type = _currClass.parent;
+       }
+       return "";
+   }
+
+   String getIdentifierType(String variable) {
+       if (currMethod != null) {
+           if (currMethod.localVar.containsKey(variable)) {
+               return currMethod.localVar.get(variable);
+           }
+           else if (currMethod.paramType.containsKey(variable)){
+               return currMethod.paramType.get(variable);
+           }
+           else {
+               return getInstanceVarType(variable);
+           }
+       }
+       else {
+           return getInstanceVarType(variable);
+       }
+   }
+
+   Method getMethod(String _type, String _methodName) {
+       while (_type != null) {
+           CustomType _currClass = symbolTable.get(_type);
+           if (_currClass.method.containsKey(_methodName)) {
+               return _currClass.method.get(_methodName);
+           }
+           _type = _currClass.parent;
+       }
+       return null;
+   }
+
+   boolean isIdentifier(String str) {
+       if (str.startsWith("TEMP")) {
+           return false;
+       }
+       char c = str.charAt(0);
+       if ('0' <= c && c <= '9') {
+           return false;
+       }
+       return true;
+   }
+
+   int parameterIndex = 1;
+   boolean paramFlag = false;
+
+   String getDeclClass(String _var) {
+       String _type = currClass.name;
+       while (_type != null) {
+           CustomType _currClass = symbolTable.get(_type);
+           if (_currClass.instanceVar.containsKey(_var)) {
+               return _type;
+           }
+           _type = _currClass.parent;
+       }
+       return "";
+   }
+
    public R visit(NodeList n, A argu) {
       R _ret=null;
       int _count=0;
@@ -109,6 +206,8 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f16 -> "}"
     */
    public R visit(MainClass n, A argu) {
+      System.out.println("MAIN");
+
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
@@ -127,6 +226,8 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
       n.f14.accept(this, argu);
       n.f15.accept(this, argu);
       n.f16.accept(this, argu);
+      
+      System.out.println("END\n");
       return _ret;
    }
 
@@ -151,11 +252,13 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    public R visit(ClassDeclaration n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _className = (String)n.f1.accept(this, argu);
+      currClass = symbolTable.get(_className);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
+      currClass = null;
       return _ret;
    }
 
@@ -172,13 +275,15 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    public R visit(ClassExtendsDeclaration n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _className = (String)n.f1.accept(this, argu);
+      currClass = symbolTable.get(_className);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
       n.f6.accept(this, argu);
       n.f7.accept(this, argu);
+      currClass = null;
       return _ret;
    }
 
@@ -190,8 +295,11 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    public R visit(VarDeclaration n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _varName = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+      if (currMethod != null) {
+          currMethod.varToTemp.put(_varName, genTemp());
+      }
       return _ret;
    }
 
@@ -214,7 +322,14 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String _methodName = (String)n.f2.accept(this, argu);
+      currMethod = currClass.method.get(_methodName);
+
+      String _functionLabel = currClass.name + "_" + _methodName;
+      int _noOfArgs = currMethod.paramList.size() + 1;
+      System.out.println(_functionLabel + "[" + _noOfArgs + "]");
+      System.out.println("BEGIN");
+
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
@@ -222,9 +337,15 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
       n.f7.accept(this, argu);
       n.f8.accept(this, argu);
       n.f9.accept(this, argu);
-      n.f10.accept(this, argu);
+      System.out.println("RETURN ");
+      String _retExp = (String)n.f10.accept(this, argu);
       n.f11.accept(this, argu);
       n.f12.accept(this, argu);
+
+      System.out.println("END\n");
+
+      currMethod = null;
+      parameterIndex = 1;
       return _ret;
    }
 
@@ -246,7 +367,9 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    public R visit(FormalParameter n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _parameter = (String)n.f1.accept(this, argu);
+      currMethod.varToTemp.put(_parameter, "TEMP " + parameterIndex);
+      parameterIndex++;
       return _ret;
    }
 
@@ -359,10 +482,22 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     */
    public R visit(AssignmentStatement n, A argu) {
       R _ret=null;
-      n.f0.accept(this, argu);
+      String _var = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+
+      if (currMethod.varToTemp.containsKey(_var)) {
+          String t2 = currMethod.varToTemp.get(_var);
+          System.out.println("    MOVE " + t2);
+          String t1 = (String)n.f2.accept(this, argu);
+          n.f3.accept(this, argu);
+      }
+      else {
+          String _fieldName = getDeclClass(_var) + "_" + _var;
+          int _index = memLayout.get(currClass.name).fields.get(_fieldName);
+          System.out.println("    HSTORE TEMP 0 " + _index);
+          String t1 = (String)n.f2.accept(this, argu);
+          n.f3.accept(this, argu);
+      }
       return _ret;
    }
 
@@ -377,12 +512,28 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     */
    public R visit(ArrayAssignmentStatement n, A argu) {
       R _ret=null;
-      n.f0.accept(this, argu);
+      String _var = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+
+      String t = new String();
+      if (currMethod.varToTemp.containsKey(_var)) {
+          t = currMethod.varToTemp.get(_var);
+      }
+      else {
+          t = genTemp();
+          String _fieldName = getDeclClass(_var) + "_" + _var;
+          int _index = memLayout.get(currClass.name).fields.get(_fieldName);
+
+          System.out.println("    HLOAD " + t + " TEMP 0 " + _index);
+      }
+      String t_i = genTemp();
+      System.out.println("    MOVE " + t_i + " PLUS " + t + " TIMES PLUS ");
+      String i = (String)n.f2.accept(this, argu);
+      System.out.println(" 1 4 ");
+      System.out.println("    HSTORE " + t_i + " 0 ");
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
-      n.f5.accept(this, argu);
+      String t1 = (String)n.f5.accept(this, argu);
       n.f6.accept(this, argu);
       return _ret;
    }
@@ -405,12 +556,20 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> Statement()
     */
    public R visit(IfthenStatement n, A argu) {
+      String L_end = genLabel();
+
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+
+      System.out.println("    CJUMP ");
+      String condition = (String)n.f2.accept(this, argu);
+      System.out.println(" " + L_end);
       n.f3.accept(this, argu);
+
       n.f4.accept(this, argu);
+
+      System.out.println(L_end + " NOOP");
       return _ret;
    }
 
@@ -424,14 +583,27 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f6 -> Statement()
     */
    public R visit(IfthenElseStatement n, A argu) {
+      String L_else = genLabel();
+      String L_end = genLabel();
+
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+
+      System.out.println("    CJUMP ");
+      String condition = (String)n.f2.accept(this, argu);
+      System.out.println(" " + L_else);
       n.f3.accept(this, argu);
+      
       n.f4.accept(this, argu);
+
+      System.out.println("    JUMP " + L_end);
+      System.out.println(L_else + " NOOP");
+
       n.f5.accept(this, argu);
       n.f6.accept(this, argu);
+
+      System.out.println(L_end + " NOOP");
       return _ret;
    }
 
@@ -443,12 +615,23 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> Statement()
     */
    public R visit(WhileStatement n, A argu) {
+      String L_while = genLabel();
+      String L_end = genLabel();
+
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+
+      System.out.println(L_while + " NOOP");
+      System.out.println("    CJUMP ");
+      String condition = (String)n.f2.accept(this, argu);
+      System.out.println(" " + L_end);
       n.f3.accept(this, argu);
+
       n.f4.accept(this, argu);
+
+      System.out.println("    JUMP " + L_while);
+      System.out.println(L_end + " NOOP");
       return _ret;
    }
 
@@ -460,6 +643,8 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> ";"
     */
    public R visit(PrintStatement n, A argu) {
+      System.out.println("PRINT");
+
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
@@ -485,8 +670,7 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     *       | PrimaryExpression()
     */
    public R visit(Expression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -513,10 +697,28 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(AndExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      String L_else = genLabel();
+      String L_end = genLabel();
+
+      R _ret = (R)t;
+      
+      System.out.println("BEGIN");
+      System.out.println("    CJUMP ");
+      String t1 = (String)n.f0.accept(this, argu);
+      System.out.println(" " + L_else);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      System.out.println("    CJUMP ");
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println(" " + L_else);
+      System.out.println("    MOVE " + t + " 1");
+      System.out.println("    JUMP " + L_end);
+      System.out.println(L_else + " NOOP");
+      System.out.println("    MOVE " + t + " 0");
+      System.out.println(L_end + " NOOP");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -526,10 +728,33 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(OrExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      String L_elseif = genLabel();
+      String L_else = genLabel();
+      String L_end = genLabel();
+ 
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    CJUMP ");
+      String t1 = (String)n.f0.accept(this, argu);
+      System.out.println(" " + L_elseif);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      System.out.println("    MOVE " + t + " 1");
+      System.out.println("    JUMP " + L_end);
+      System.out.println(L_elseif + " NOOP");
+      System.out.println("    CJUMP ");
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println(" " + L_else);
+      System.out.println("    MOVE " + t + " 1");
+      System.out.println("    JUMP " + L_end);
+      System.out.println(L_else + " NOOP");
+      System.out.println("    MOVE " + t + " 0");
+      System.out.println(L_end + " NOOP");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
+
       return _ret;
    }
 
@@ -539,10 +764,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(CompareExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " LE ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -552,10 +784,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(neqExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " NE ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -565,10 +804,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(AddExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " PLUS ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -578,10 +824,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(MinusExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " MINUS ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -591,10 +844,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(TimesExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " TIMES ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -604,10 +864,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> PrimaryExpression()
     */
    public R visit(DivExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " DIV ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -618,11 +885,22 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f3 -> "]"
     */
    public R visit(ArrayLookup n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      String t2 = genTemp();
+      System.out.println("    MOVE " + t2 + " PLUS ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      System.out.println(" TIMES PLUS ");
+      String i = (String)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
+      System.out.println(" 1 4");
+      System.out.println("    HLOAD " + t + " " + t2 + " 0");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -632,10 +910,18 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> "length"
     */
    public R visit(ArrayLength n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+
+      R _ret = (R)t;
+
+      System.out.println("BEGIN");
+      System.out.println("    HLOAD " + t + " ");
+      String t1 = (String)n.f0.accept(this, argu);
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+      System.out.println(" 0");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -648,13 +934,45 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f5 -> ")"
     */
    public R visit(MessageSend n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      String t = genTemp();
+      Attributes a = new Attributes();
+
+      R _ret = (R)t;
+
+      String t2 = genTemp();
+      String t3 = genTemp();
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t);
+      System.out.println("    CALL");
+      System.out.println("BEGIN");
+      System.out.println("    HLOAD " + t2 + " ");
+      String t1 = (String)n.f0.accept(this, (A)a);
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      System.out.println(" 0");
+      String _methodName = (String)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
+
+      String _type = a.type;
+      int _index = memLayout.get(_type).vtable.get(_methodName);
+      System.out.println("    HLOAD " + t3 + " " + t2 + " " + _index);
+      System.out.println("    RETURN " + t3);
+      System.out.println("END");
+      System.out.print("( " + t1 + " ");
+
       n.f4.accept(this, argu);
       n.f5.accept(this, argu);
+
+      System.out.println(")");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
+      if (argu != null && !paramFlag) {
+          Attributes _a = (Attributes)argu;
+          Method _method = getMethod(_type, _methodName);
+          if (_method != null) {
+              _a.type = _method.returnType;
+          }
+      }
       return _ret;
    }
 
@@ -692,8 +1010,25 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     *       | BracketExpression()
     */
    public R visit(PrimaryExpression n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
+      if (isIdentifier((String)_ret)) {
+          String _var = (String)_ret;
+          if (currMethod.varToTemp.containsKey(_var)) {
+              _ret = (R)currMethod.varToTemp.get(_var);
+              System.out.println((String)_ret);
+          }
+          else {
+              String _fieldName = getDeclClass(_var) + "_" + _var;
+              int _index = memLayout.get(currClass.name).fields.get(_fieldName);
+
+              String t = genTemp();
+              System.out.println("BEGIN");
+              System.out.println("    HLOAD " + t + " TEMP 0 " + _index);
+              System.out.println("    RETURN " + t);
+              System.out.println("END");
+              _ret = (R)t;
+          }
+      }
       return _ret;
    }
 
@@ -701,8 +1036,8 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> <INTEGER_LITERAL>
     */
    public R visit(IntegerLiteral n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = (R)n.f0.toString();
+      System.out.println((String)_ret);
       return _ret;
    }
 
@@ -710,8 +1045,9 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> "true"
     */
    public R visit(TrueLiteral n, A argu) {
-      R _ret=null;
+      R _ret = (R)"1";
       n.f0.accept(this, argu);
+      System.out.println("1");
       return _ret;
    }
 
@@ -719,8 +1055,9 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> "false"
     */
    public R visit(FalseLiteral n, A argu) {
-      R _ret=null;
+      R _ret = (R)"0";
       n.f0.accept(this, argu);
+      System.out.println("0");
       return _ret;
    }
 
@@ -728,8 +1065,11 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> <IDENTIFIER>
     */
    public R visit(Identifier n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = (R)n.f0.toString();
+      if (argu != null && !paramFlag) {
+          Attributes _a = (Attributes)argu;
+          _a.type = getIdentifierType((String)_ret);
+      }
       return _ret;
    }
 
@@ -737,8 +1077,18 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> "this"
     */
    public R visit(ThisExpression n, A argu) {
-      R _ret=null;
+      String t = genTemp();
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t + " TEMP 0");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
+
+      R _ret = (R)t;
       n.f0.accept(this, argu);
+      if (argu != null && !paramFlag) {
+          Attributes _a = (Attributes)argu;
+          _a.type = currClass.name;
+      }
       return _ret;
    }
 
@@ -750,12 +1100,49 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> "]"
     */
    public R visit(ArrayAllocationExpression n, A argu) {
-      R _ret=null;
+      String t = genTemp();
+
+      R _ret = (R)t;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+
+      String L_while = genLabel();
+      String L_end = genLabel();
+      String L_error = genLabel();
+
+      String t1 = genTemp();
+      String i = genTemp();
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t);
+      System.out.println("BEGIN");
+      System.out.println("    CJUMP LE 0 ");
+      String sz = (String)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+      System.out.println(" " + L_error);
+      System.out.println("    MOVE " + t1 + " HALLOCATE TIMES PLUS " + sz + " 1 4");
+      System.out.println("    HSTORE " + t1 + " 0 " + sz);
+
+      System.out.println("    MOVE " + i + " 4");
+      System.out.println(L_while + " NOOP");
+      System.out.println("    CJUMP LE " + i + " TIMES " + sz + " 4 " + L_end);
+      String t2 = genTemp();
+      System.out.println("    MOVE " + t2 + " PLUS " + t1 + " " + i);
+      System.out.println("    HSTORE " + t2 + " 0 " + " 0");
+      System.out.println("    MOVE " + i + " PLUS " + i + " 4");
+      System.out.println("    JUMP " + L_while);
+      System.out.println("    JUMP " + L_end);
+
+      System.out.println(L_error + " NOOP");
+      System.out.println("    ERROR");
+
+      System.out.println(L_end + " NOOP");
+      System.out.println("    RETURN " + t1);
+
+      System.out.println("END");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -766,11 +1153,59 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f3 -> ")"
     */
    public R visit(AllocationExpression n, A argu) {
-      R _ret=null;
+      String t = genTemp();
+      
+      String t1 = genTemp();
+      String i = genTemp();
+      String t2 = genTemp();
+
+      String L_while = genLabel();
+      String L_end = genLabel();
+      String L_return = genLabel();
+
+      R _ret = (R)t;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _type = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
+      
+      ClassMemLayout _typeLayout = memLayout.get(_type);
+      int sz1 = (_typeLayout.fields.size() + 1) * 4; // size of the main array
+      int sz2 = _typeLayout.vtable.size() * 4;       // size of the vtable 
+      
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t);
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t1 + " HALLOCATE " + sz1); // main array
+
+      System.out.println("    MOVE " + i + " 0");
+      System.out.println(L_while + " NOOP");
+      System.out.println("    CJUMP LE " + i + " MINUS " + sz1 + " 1 " + L_end);
+      String t3 = genTemp();
+      System.out.println("    MOVE " + t3 + " PLUS " + t1 + " " + i);
+      System.out.println("    HSTORE " + t3 + " 0 " + " 0");
+      System.out.println("    MOVE " + i + " PLUS " + i + " 4");
+      System.out.println("    JUMP " + L_while);
+
+      System.out.println(L_end + " NOOP");
+      System.out.println("    CJUMP LE 4 " + sz2 + " " + L_return);
+      System.out.println("    MOVE " + t2 + " HALLOCATE " + sz2); // vtable
+      for (Map.Entry<String, Integer> entry : _typeLayout.vtable.entrySet()) {
+          String _label = _type + "_" + entry.getKey();
+          Integer _index = entry.getValue();
+          System.out.println("    HSTORE " + t2 + " " + _index + " " + _label);
+      }
+      System.out.println("    HSTORE " + t1 + " 0 " + t2);
+
+      System.out.println(L_return + " NOOP");
+      System.out.println("    RETURN " + t1);
+      System.out.println("END");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
+      if (argu != null && !paramFlag) {
+          Attributes _a = (Attributes)argu;
+          _a.type = _type;
+      }
       return _ret;
    }
 
@@ -779,9 +1214,29 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f1 -> Expression()
     */
    public R visit(NotExpression n, A argu) {
-      R _ret=null;
+      String t = genTemp();
+
+      String L_else = genLabel();
+      String L_end = genLabel();
+
+      R _ret = (R)t;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+
+      System.out.println("BEGIN");
+      System.out.println("    MOVE " + t);
+      System.out.println("BEGIN");
+      System.out.println("    CJUMP ");
+      String exp = (String)n.f1.accept(this, argu);
+      System.out.println(" " + L_else);
+      System.out.println("    MOVE " + t + " 0");
+      System.out.println("    JUMP " + L_end);
+      System.out.println(L_else + " NOOP");
+      System.out.println("    MOVE " + t + " 1");
+      System.out.println(L_end + " NOOP");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
+      System.out.println("    RETURN " + t);
+      System.out.println("END");
       return _ret;
    }
 
@@ -791,11 +1246,11 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> ")"
     */
    public R visit(BracketExpression n, A argu) {
-      R _ret=null;
+      String _ret = new String();
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      _ret = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      return _ret;
+      return (R)_ret;
    }
 
 }

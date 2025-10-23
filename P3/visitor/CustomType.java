@@ -6,7 +6,7 @@ public class CustomType {
         name = new String();
         instanceVar = new HashMap<String, String>();
         method = new HashMap<String, Method>();
-        parent = new String();
+        parent = null;
    }
    String name;                         // Name of the custom type
    HashMap<String, String> instanceVar; // Instance variable -> Type
