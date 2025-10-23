@@ -15,9 +15,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    // Auto class visitors--probably don't need to be overridden.
    //
 
-   HashMap<String, ClassMemLayout> memLayout = new HashMap<>(); // class name -> ClassMemLayout object
+   public HashMap<String, ClassMemLayout> memLayout = new HashMap<>(); // class name -> ClassMemLayout object
    ClassMemLayout currClass = null;
-   int fieldIndex = 0;
+   int fieldIndex = 4; // vtable ptr is stored at index 0, so variables start from index 4
    int methodIndex = 0;
 
    // Stuff for DFS
@@ -213,7 +213,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       memLayout.put(currClass.name, currClass);
       currClass = null;
-      fieldIndex = 0;
+      fieldIndex = 4;
       methodIndex = 0;
 
       return _ret;
@@ -249,7 +249,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       memLayout.put(currClass.name, currClass);
       currClass = null;
-      fieldIndex = 0;
+      fieldIndex = 4;
       methodIndex = 0;
       return _ret;
    }
