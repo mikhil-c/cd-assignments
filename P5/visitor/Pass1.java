@@ -14,6 +14,14 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+
+   public ArrayList<InstrNode> dataSets = new ArrayList<>(); // stores use and def sets of each instruction
+   int instr = 0; // index of an instruction (i.e., instructions are numbered from 0)
+
+   public HashMap<String, Integer> labelIdx = new HashMap<>(); // label to instruction number/index
+   boolean moveFlag = false;
+   boolean callFlag = false;
+   
    public R visit(NodeList n, A argu) {
       R _ret=null;
       int _count=0;
@@ -38,11 +46,12 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
          return null;
    }
 
-   public R visit(NodeOptional n, A argu) {
-      if ( n.present() )
-         return n.node.accept(this,argu);
-      else
-         return null;
+   public R visit(NodeOptional n, A argu) { // the node in the NodeOptional can only be label according to the grammar
+      if ( n.present() ) {
+         String _label = (String)n.node.accept(this,argu);
+         labelIdx.put(_label, instr);
+      }
+      return null;
    }
 
    public R visit(NodeSequence n, A argu) {
@@ -117,6 +126,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(Stmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
+
+      ++instr;
       return _ret;
    }
 
@@ -126,6 +137,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(NoOpStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
+
+      dataSets.add(new InstrNode());
       return _ret;
    }
 
@@ -135,6 +148,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(ErrorStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
+
+      dataSets.add(new InstrNode());
       return _ret;
    }
 
@@ -146,8 +161,12 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(CJumpStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String t = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+
+      InstrNode currDataSets = new InstrNode();
+      currDataSets.use.add(t);
+      dataSets.add(currDataSets);
       return _ret;
    }
 
@@ -159,6 +178,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
+
+      dataSets.add(new InstrNode());
       return _ret;
    }
 
@@ -171,9 +192,14 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(HStoreStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String t1 = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      String t2 = (String)n.f3.accept(this, argu);
+
+      InstrNode currDataSets = new InstrNode();
+      currDataSets.use.add(t1);
+      currDataSets.use.add(t2);
+      dataSets.add(currDataSets);
       return _ret;
    }
 
@@ -186,9 +212,14 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(HLoadStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t1 = (String)n.f1.accept(this, argu);
+      String t2 = (String)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
+
+      InstrNode currDataSets = new InstrNode();
+      currDataSets.def.add(t1);
+      currDataSets.use.add(t2);
+      dataSets.add(currDataSets);
       return _ret;
    }
 
@@ -198,10 +229,18 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f2 -> Exp()
     */
    public R visit(MoveStmt n, A argu) {
+      InstrNode currDataSets = new InstrNode();
+      dataSets.add(currDataSets);
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String t1 = (String)n.f1.accept(this, argu);
+
+      moveFlag = true;
       n.f2.accept(this, argu);
+      moveFlag = false;
+
+      currDataSets.def.add(t1);
       return _ret;
    }
 
@@ -212,7 +251,13 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(PrintStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _simpleExp = (String)n.f1.accept(this, argu);
+
+      InstrNode currDataSets = new InstrNode();
+      if (_simpleExp.startsWith("TEMP ")) {
+          currDataSets.use.add(_simpleExp);
+      }
+      dataSets.add(currDataSets);
       return _ret;
    }
 
@@ -240,8 +285,15 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      String _simpleExp = (String)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      InstrNode currDataSets = new InstrNode();
+      if (_simpleExp.startsWith("TEMP ")) {
+          currDataSets.use.add(_simpleExp);
+      }
+      dataSets.add(currDataSets);
+      ++instr;
       return _ret;
    }
 
@@ -253,12 +305,22 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f4 -> ")"
     */
    public R visit(Call n, A argu) {
+      InstrNode currDataSets = dataSets.get(instr);
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _simpleExp = (String)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+
+      callFlag = true;
       n.f3.accept(this, argu);
+      callFlag = false;
+
       n.f4.accept(this, argu);
+
+      if (_simpleExp.startsWith("TEMP ")) {
+          currDataSets.use.add(_simpleExp);
+      }
       return _ret;
    }
 
@@ -267,9 +329,15 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f1 -> SimpleExp()
     */
    public R visit(HAllocate n, A argu) {
+      InstrNode currDataSets = dataSets.get(instr);
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _simpleExp = (String)n.f1.accept(this, argu);
+
+      if (_simpleExp.startsWith("TEMP ")) {
+          currDataSets.use.add(_simpleExp);
+      }
       return _ret;
    }
 
@@ -279,10 +347,17 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f2 -> SimpleExp()
     */
    public R visit(BinOp n, A argu) {
+      InstrNode currDataSets = dataSets.get(instr);
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String t1 = (String)n.f1.accept(this, argu);
+      String _simpleExp = (String)n.f2.accept(this, argu);
+
+      currDataSets.use.add(t1);
+      if (_simpleExp.startsWith("TEMP ")) {
+          currDataSets.use.add(_simpleExp);
+      }
       return _ret;
    }
 
@@ -306,8 +381,15 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     *       | Label()
     */
    public R visit(SimpleExp n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
+
+      if (moveFlag) {
+          InstrNode currDataSets = dataSets.get(instr);
+          String str = (String)_ret;
+          if (str.startsWith("TEMP ")) {
+              currDataSets.use.add(str);
+          }
+      }
       return _ret;
    }
 
@@ -318,7 +400,13 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(Temp n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String intLiteral = (String)n.f1.accept(this, argu);
+      _ret = (R)("TEMP " + intLiteral);
+
+      if (callFlag) {
+          InstrNode currDataSets = dataSets.get(instr);
+          currDataSets.use.add((String)_ret);
+      }
       return _ret;
    }
 
@@ -326,8 +414,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> <INTEGER_LITERAL>
     */
    public R visit(IntegerLiteral n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = (R)n.f0.toString();
       return _ret;
    }
 
@@ -335,8 +422,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f0 -> <IDENTIFIER>
     */
    public R visit(Label n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = (R)n.f0.toString();
       return _ret;
    }
 
