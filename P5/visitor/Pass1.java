@@ -15,13 +15,34 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    // Auto class visitors--probably don't need to be overridden.
    //
 
-   public ArrayList<InstrNode> dataSets = new ArrayList<>(); // stores use and def sets of each instruction
+   ArrayList<InstrNode> dataSets = new ArrayList<>(); // stores use and def sets of each instruction
    int instr = 0; // index of an instruction (i.e., instructions are numbered from 0)
 
-   public HashMap<String, Integer> labelIdx = new HashMap<>(); // label to instruction number/index
+   String scope = new String();
+   HashMap<String, HashMap<String, Integer>> labelIdx = new HashMap<>(); // scope -> label -> index
+   HashMap<String, Integer> currScopeLabelIdx = new HashMap<>();         // label -> instruction index in the current scope
    boolean moveFlag = false;
    boolean callFlag = false;
+
+   ArrayList<Integer> roots = new ArrayList<>();
+   ArrayList<String> scopeList = new ArrayList<>();
+
+   HashSet<String> temporaries = new HashSet<>();     // stores all the temporaries used in the program
+   public HashMap<String, HashMap<String, LiveRange>> liveRange = new HashMap<>(); // scope -> temp -> live range
    
+   // for debugging
+   void print_liveRange() {
+       for (String _scope : scopeList) {
+           System.out.println(_scope);
+           for (Map.Entry<String, LiveRange> entry : liveRange.get(_scope).entrySet()) {
+               String _temp = entry.getKey();
+               LiveRange _range = entry.getValue();
+               System.out.println(_temp + " -> " + _range.min + ", " + _range.max);
+           }
+           System.out.println();
+       }
+   }
+
    public R visit(NodeList n, A argu) {
       R _ret=null;
       int _count=0;
@@ -49,7 +70,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(NodeOptional n, A argu) { // the node in the NodeOptional can only be label according to the grammar
       if ( n.present() ) {
          String _label = (String)n.node.accept(this,argu);
-         labelIdx.put(_label, instr);
+         currScopeLabelIdx.put(_label, instr);
       }
       return null;
    }
@@ -78,12 +99,89 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f4 -> <EOF>
     */
    public R visit(Goal n, A argu) {
+      scope = "MAIN";
+      roots.add(instr);
+      scopeList.add(scope);
+      
       R _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+      
+      labelIdx.put(scope, currScopeLabelIdx);
+      currScopeLabelIdx = new HashMap<>();
+      scope = new String();
+
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      // computes in and out sets for each instruction
+      for (int i = 0; i < roots.size(); ++i) {
+          int _start = roots.get(i);
+          int _end;
+          if (i + 1 < roots.size()) {
+              _end = roots.get(i + 1);
+          }
+          else {
+              _end = instr;
+          }
+          String currScope = scopeList.get(i);
+
+          boolean change;
+          do {
+              change = false;
+              for (int j = _start; j < _end; ++j) {
+                  InstrNode currNode = dataSets.get(j);
+                  HashSet<String> old_in = new HashSet<>(currNode.in);
+                  HashSet<String> old_out = new HashSet<>(currNode.out);
+
+                  HashSet<String> new_in = new HashSet<>(currNode.out);
+                  new_in.removeAll(currNode.def);
+                  new_in.addAll(currNode.use);
+                  if (!new_in.equals(old_in)) {
+                      change = true;
+                      currNode.in = new_in;
+                  }
+
+                  HashSet<String> new_out = new HashSet<>();
+                  if (j + 1 < _end) {
+                      InstrNode nextNode = dataSets.get(j + 1);
+                      new_out.addAll(nextNode.in);
+                  }
+                  if (currNode.targetLabel != null) {
+                      InstrNode nextNode = dataSets.get(labelIdx.get(currScope).get(currNode.targetLabel));
+                      new_out.addAll(nextNode.in);
+                  }
+                  if (!new_out.equals(old_out)) {
+                      change = true;
+                      currNode.out = new_out;
+                  }
+              }
+          } while (change);
+      }
+
+      // computes the live range for each temp
+      for (int i = 0; i < roots.size(); ++i) {
+          int _start = roots.get(i);
+          int _end = (i + 1 < roots.size()) ? roots.get(i + 1) : instr;
+          String currScope = scopeList.get(i);
+          HashMap<String, LiveRange> currLiveRange = new HashMap<>();
+
+          for (int j = _start; j < _end; ++j) {
+              InstrNode currNode = dataSets.get(j);
+              for (String _temp : currNode.in) {
+                  if (!currLiveRange.containsKey(_temp)) {
+                      LiveRange _obj = new LiveRange();
+                      _obj.min = j;
+                      currLiveRange.put(_temp, _obj);
+                  }
+                  int old_max = currLiveRange.get(_temp).max;
+                  currLiveRange.get(_temp).max = (j > old_max) ? j : old_max;
+              }
+          }
+
+          liveRange.put(currScope, currLiveRange);
+      }
       return _ret;
    }
 
@@ -104,12 +202,20 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
     * f4 -> StmtExp()
     */
    public R visit(Procedure n, A argu) {
+      roots.add(instr);
+
       R _ret=null;
-      n.f0.accept(this, argu);
+      scope = (String)n.f0.accept(this, argu);
+      scopeList.add(scope);
+
       n.f1.accept(this, argu);
       n.f2.accept(this, argu);
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      labelIdx.put(scope, currScopeLabelIdx);
+      currScopeLabelIdx = new HashMap<>();
+      scope = new String();
       return _ret;
    }
 
@@ -162,10 +268,11 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       R _ret=null;
       n.f0.accept(this, argu);
       String t = (String)n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String _label = (String)n.f2.accept(this, argu);
 
       InstrNode currDataSets = new InstrNode();
       currDataSets.use.add(t);
+      currDataSets.targetLabel = _label;
       dataSets.add(currDataSets);
       return _ret;
    }
@@ -177,9 +284,11 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    public R visit(JumpStmt n, A argu) {
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      String _label = (String)n.f1.accept(this, argu);
 
-      dataSets.add(new InstrNode());
+      InstrNode currDataSets = new InstrNode();
+      currDataSets.targetLabel = _label; 
+      dataSets.add(currDataSets);
       return _ret;
    }
 
@@ -407,6 +516,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
           InstrNode currDataSets = dataSets.get(instr);
           currDataSets.use.add((String)_ret);
       }
+      temporaries.add((String)_ret);
       return _ret;
    }
 
