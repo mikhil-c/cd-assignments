@@ -16,7 +16,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    //
 
    ArrayList<InstrNode> dataSets = new ArrayList<>(); // stores use and def sets of each instruction
-   int instr = 0; // index of an instruction (i.e., instructions are numbered from 0)
+   public int instr = 0; // index of an instruction (i.e., instructions are numbered from 0)
 
    String scope = new String();
    HashMap<String, HashMap<String, Integer>> labelIdx = new HashMap<>(); // scope -> label -> index
@@ -24,8 +24,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    boolean moveFlag = false;
    boolean callFlag = false;
 
-   ArrayList<Integer> roots = new ArrayList<>();
-   ArrayList<String> scopeList = new ArrayList<>();
+   public ArrayList<String> scopeList = new ArrayList<>();
+   public ArrayList<Integer> roots = new ArrayList<>();
+   public ArrayList<Integer> arity = new ArrayList<>(); // stores the no.of arguments used by a procedure
 
    HashSet<String> temporaries = new HashSet<>();     // stores all the temporaries used in the program
    public HashMap<String, HashMap<String, LiveRange>> liveRange = new HashMap<>(); // scope -> temp -> live range
@@ -102,6 +103,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       scope = "MAIN";
       roots.add(instr);
       scopeList.add(scope);
+      arity.add(0);
       
       R _ret=null;
       n.f0.accept(this, argu);
@@ -173,6 +175,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
                   if (!currLiveRange.containsKey(_temp)) {
                       LiveRange _obj = new LiveRange();
                       _obj.min = j;
+                      _obj.temp = _temp;
                       currLiveRange.put(_temp, _obj);
                   }
                   int old_max = currLiveRange.get(_temp).max;
@@ -209,7 +212,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       scopeList.add(scope);
 
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      String nArguments = (String)n.f2.accept(this, argu);
+      arity.add(Integer.parseInt(nArguments));
+
       n.f3.accept(this, argu);
       n.f4.accept(this, argu);
 
