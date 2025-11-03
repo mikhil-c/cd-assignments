@@ -35,6 +35,9 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
    HashMap<String, String> tempMap = new HashMap<>(); // temporary to temporary
    String argStr = new String();
 
+   boolean flag = false;  // flag for HSTORE
+   boolean flag2 = false; // flag for Operator
+
    public R visit(NodeList n, A argu) {
       Return r = new Return();
 
@@ -239,8 +242,18 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       n.f0.accept(this, argu);
       Return o1 = (Return)n.f1.accept(this, (A)s1);
       Return o2 = (Return)n.f2.accept(this, argu);
+      flag = false;
       Return o3 = (Return)n.f3.accept(this, (A)s2);
-      r.code = s1.code + s2.code +  "HSTORE " + o1.ret + " " + o2.ret + " " + o3.ret + "\n";
+
+      if (flag) {
+          String t = genTemp();
+          r.code += s1.code + s2.code + "MOVE " + t + " " + o3.ret + "\n";
+          r.code += "HSTORE " + o1.ret + " " + o2.ret + " " + t + "\n";
+          flag = false;
+      }
+      else {
+          r.code = s1.code + s2.code + "HSTORE " + o1.ret + " " + o2.ret + " " + o3.ret + "\n";
+      }
       return _ret;
    }
 
@@ -339,6 +352,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       r.code = o1.code + s.code + "RETURN " + o2.ret + "\n";
       r.ret = o2.ret;
+      flag = false;
       return _ret;
    }
 
@@ -368,6 +382,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       }
       argStr = "";
       r.ret = t1;
+      flag = false;
       return _ret;
    }
 
@@ -389,6 +404,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
           s.code += "MOVE " + t1 + " HALLOCATE " + o1.ret + "\n";
       }
       r.ret = t1;
+      flag = false;
       return _ret;
    }
 
@@ -403,15 +419,24 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       R _ret = (R)r;
       Return o1 = (Return)n.f0.accept(this, argu);
+      flag2 = false;
       Return o2 = (Return)n.f1.accept(this, argu);
       Return o3 = (Return)n.f2.accept(this, argu);
 
       String t1 = genTemp();
 
       if (s != null) {
-          s.code += "MOVE " + t1 + " " + o1.code + " " + o2.ret + " " + o3.ret + "\n";
+          if (flag2) {
+              String t2 = genTemp();
+              s.code += "MOVE " + t2 + " " + o2.ret + "\n";
+              s.code += "MOVE " + t1 + " " + o1.code + " " + t2 + " " + o3.ret + "\n";
+          }
+          else {
+              s.code += "MOVE " + t1 + " " + o1.code + " " + o2.ret + " " + o3.ret + "\n";
+          }
       }
       r.ret = t1;
+      flag = false;
       return _ret;
    }
 
@@ -470,6 +495,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       R _ret = (R)r;
       r.ret = n.f0.toString();
+      flag = true;
+      flag2 = true;
       return _ret;
    }
 
@@ -481,6 +508,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       R _ret = (R)r;
       r.ret = n.f0.toString();
+      flag = true;
       return _ret;
    }
 
