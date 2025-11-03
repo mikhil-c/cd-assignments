@@ -16,6 +16,12 @@ public class P5 {
          liveRange = v1.liveRange;
 
          linearScanRegisterAllocation();
+
+         Pass2 v2 = new Pass2<>();
+         v2.labelMap = v1.labelMap;
+         v2.regMap = regMap;
+         v2.stackSpace = stackSpace;
+         root.accept(v2, null);
       }
       catch (ParseException e) {
          System.out.println(e.toString());
@@ -68,6 +74,9 @@ public class P5 {
                    ++currLoc;
                }
            }
+           if (!currScope.equals("MAIN")) {
+               currLoc += 18;
+           }
 
            // to get the live intervals sorted in the order of increasing start point(min)
            ArrayList<LiveRange> liveInterval = new ArrayList<>();
@@ -101,7 +110,7 @@ public class P5 {
                }
            }
 
-           stackSpace.put(currScope, currLoc - 1 + 18);
+           stackSpace.put(currScope, currLoc - 1);
 
            currLoc = 1;
            regMap.put(currScope, currRegMap);

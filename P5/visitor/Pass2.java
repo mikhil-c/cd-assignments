@@ -14,8 +14,42 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    //
    // Auto class visitors--probably don't need to be overridden.
    //
+
+   class Return {
+       Return() {
+           code = new String();
+           arg = new String();
+       }
+       String code;
+       String arg;
+   }
+
+   String scope = new String();
+   public HashMap<String, HashMap<String, String>> labelMap = new HashMap<>();
+   public HashMap<String, HashMap<String, String>> regMap = new HashMap<>();
+   HashMap<String, String> currRegMap = new HashMap<>();
+
+   ArrayList<String> argList = new ArrayList<>();
+   boolean argFlag = false;
+   boolean simpleExpFlag = false;
+   boolean callFlag = false;
+
+   public HashMap<String, Integer> stackSpace = new HashMap<>();
+   int currStackSpace = 0;
+   int currMaxArgs = 0;
+
+   boolean isSpilled(String str) {
+       return (!str.startsWith("t")) && (!str.startsWith("s")) && (!str.startsWith("a"));
+   }
+
+   boolean isTemp(String str) {
+       return str.startsWith("TEMP ");
+   }
+
    public R visit(NodeList n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       int _count=0;
       for ( Enumeration<Node> e = n.elements(); e.hasMoreElements(); ) {
          e.nextElement().accept(this,argu);
@@ -25,37 +59,54 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
    }
 
    public R visit(NodeListOptional n, A argu) {
+      Return r = new Return();
+
+      R _ret = (R)r;
       if ( n.present() ) {
-         R _ret=null;
          int _count=0;
          for ( Enumeration<Node> e = n.elements(); e.hasMoreElements(); ) {
-            e.nextElement().accept(this,argu);
+            Return obj = (Return)e.nextElement().accept(this,argu);
+            if (argFlag) {
+                argList.add(obj.code);
+            }
+            else {
+                r.code += obj.code;
+            }
             _count++;
          }
-         return _ret;
       }
-      else
-         return null;
+      return _ret;
    }
 
    public R visit(NodeOptional n, A argu) {
-      if ( n.present() )
-         return n.node.accept(this,argu);
-      else
-         return null;
+      Return r = new Return();
+
+      R _ret = (R)r;
+      if ( n.present() ) {
+         Return obj = (Return)n.node.accept(this,argu);
+         r.code = labelMap.get(scope).get(obj.code) + " ";
+      }
+      return _ret;
    }
 
    public R visit(NodeSequence n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       int _count=0;
       for ( Enumeration<Node> e = n.elements(); e.hasMoreElements(); ) {
-         e.nextElement().accept(this,argu);
+         Return obj = (Return)e.nextElement().accept(this,argu);
+         r.code += obj.code;
          _count++;
       }
       return _ret;
    }
 
-   public R visit(NodeToken n, A argu) { return null; }
+   public R visit(NodeToken n, A argu) { 
+       Return r = new Return();
+       R _ret = (R)r;
+       return _ret;
+   }
 
    //
    // User-generated visitor methods below
@@ -69,12 +120,37 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> <EOF>
     */
    public R visit(Goal n, A argu) {
+      Return r = new Return();
+
+      scope = "MAIN";
+      currRegMap = regMap.get(scope);
+      currStackSpace = stackSpace.get(scope);
+
       R _ret=null;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+
+      r.code += "MAIN[0]" + "[" + (stackSpace.get(scope) + 4) + "][" + currMaxArgs + "]\n";
+      r.code += o1.code;
+      r.code += "END\n";
+      if (stackSpace.get(scope) > 0) {
+          r.code += "// SPILLED\n\n";
+      }
+      else {
+          r.code += "// NOTSPILLED\n\n";
+      }
+
+      currStackSpace = 0;
+      currMaxArgs = 0;
+      scope = new String();
+      currRegMap = new HashMap<>();
+
+      Return o2 = (Return)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      r.code += o2.code;
+      System.out.println(r.code);
       return _ret;
    }
 
@@ -82,8 +158,7 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> ( ( Label() )? Stmt() )*
     */
    public R visit(StmtList n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -95,12 +170,54 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> StmtExp()
     */
    public R visit(Procedure n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      scope = ((Return)n.f0.accept(this, argu)).code;
+      currRegMap = regMap.get(scope);
+      currStackSpace = stackSpace.get(scope);
+
       n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return o1 = (Return)n.f2.accept(this, argu);
       n.f3.accept(this, argu);
-      n.f4.accept(this, argu);
+      Return o2 = (Return)n.f4.accept(this, argu);
+
+      int arity = Integer.parseInt(o1.code);
+      int j = (arity > 4) ? (arity - 3) : 1; // start memory location for saving registers
+
+      r.code += scope + "[" + o1.code + "][" + (stackSpace.get(scope) + 4) + "][" + currMaxArgs + "]\n";
+      for (int i = 0; i < 18; ++i) {
+          if (i < 8) {
+              r.code += "ASTORE SPILLEDARG " + (j - 1) + " " + ("s" + i) + "\n";
+          }
+          else {
+              r.code += "ASTORE SPILLEDARG " + (j - 1) + " " + ("t" + (i - 8)) + "\n";
+          }
+          ++j;
+      }
+      j -= 18;
+      r.code += o2.code;
+      for (int i = 0; i < 18; ++i) {
+          if (i < 8) {
+              r.code += "ALOAD " + ("s" + i) + " SPILLEDARG " + (j  - 1) + "\n";
+          }
+          else {
+              r.code += "ALOAD " + ("t" + (i - 8)) + " SPILLEDARG " + (j - 1) + "\n";
+          }
+          ++j;
+      }
+      r.code += "END\n";
+      if (stackSpace.get(scope) >= j) {
+          r.code += "// SPILLED\n\n";
+      }
+      else {
+          r.code += "// NOTSPILLED\n\n";
+      }
+
+      currStackSpace = 0;
+      currMaxArgs = 0;
+      scope = new String();
+      currRegMap = new HashMap<>();
       return _ret;
    }
 
@@ -115,8 +232,7 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     *       | PrintStmt()
     */
    public R visit(Stmt n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
       return _ret;
    }
 
@@ -124,8 +240,11 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> "NOOP"
     */
    public R visit(NoOpStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
+      r.code += "NOOP\n";
       return _ret;
    }
 
@@ -133,8 +252,11 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> "ERROR"
     */
    public R visit(ErrorStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
+      r.code += "ERROR\n";
       return _ret;
    }
 
@@ -144,10 +266,23 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> Label()
     */
    public R visit(CJumpStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+      Return o2 = (Return)n.f2.accept(this, argu);
+
+      String t1 = o1.code;
+      String reg1 = currRegMap.get(t1); 
+      if (isSpilled(reg1)) {
+          int _loc = Integer.parseInt(reg1);
+          reg1 = "v0";
+          r.code += "ALOAD " + reg1 + " SPILLEDARG " + (_loc - 1) + "\n";
+      }
+
+      String _label = labelMap.get(scope).get(o2.code);
+      r.code += "CJUMP " + reg1 + " " + _label + "\n";
       return _ret;
    }
 
@@ -156,9 +291,14 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f1 -> Label()
     */
    public R visit(JumpStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return obj = (Return)n.f1.accept(this, argu);
+
+      String _label = labelMap.get(scope).get(obj.code);
+      r.code += "JUMP " + _label + "\n"; 
       return _ret;
    }
 
@@ -169,12 +309,34 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f3 -> Temp()
     */
    public R visit(HStoreStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
-      return _ret;
+     Return o1 = (Return)n.f1.accept(this, argu);
+     Return o2 = (Return)n.f2.accept(this, argu);
+     Return o3 = (Return)n.f3.accept(this, argu);
+
+     String freeReg = "v0";
+
+     String t1 = o1.code;
+     String reg1 = currRegMap.get(t1);
+     if (isSpilled(reg1)) {
+         int _loc = Integer.parseInt(reg1);
+         reg1 = freeReg;
+         freeReg = "v1";
+         r.code += "ALOAD " + reg1 + " SPILLEDARG " + (_loc - 1) + "\n";
+     }
+
+     String t2 = o3.code;
+     String reg2 = currRegMap.get(t2);
+     if (isSpilled(reg2)) {
+         int _loc = Integer.parseInt(reg2);
+         reg2 = freeReg;
+         r.code += "ALOAD " + reg2 + " SPILLEDARG " + (_loc - 1) + "\n";
+     }
+     r.code += "HSTORE " + reg1 + " " + o2.code + " " + reg2 + "\n";
+     return _ret;
    }
 
    /**
@@ -184,11 +346,39 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f3 -> IntegerLiteral()
     */
    public R visit(HLoadStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+      Return o2 = (Return)n.f2.accept(this, argu);
+      Return o3 = (Return)n.f3.accept(this, argu);
+
+      String t1 = o1.code;
+      if (!currRegMap.containsKey(t1)) {
+          return _ret;
+      }
+      String reg1 = currRegMap.get(t1);
+
+      String t2 = o2.code;
+      String reg2 = currRegMap.get(t2);
+      if (isSpilled(reg2)) {
+          int _loc = Integer.parseInt(reg2);
+          reg2 = "v0";
+          r.code += "ALOAD " + reg2 + " SPILLEDARG " + (_loc - 1) + "\n";
+      }
+
+      int _loc = 0;
+      boolean spilled = false;
+      if (isSpilled(reg1)) {
+          spilled = true;
+          _loc = Integer.parseInt(reg1);
+          reg1 = "v0";
+      }
+      r.code += "HLOAD " + reg1 + " " + reg2 + " " + o3.code + "\n";
+      if (spilled) {
+          r.code += "ASTORE SPILLEDARG " + (_loc - 1) + " v0\n"; 
+      }
       return _ret;
    }
 
@@ -198,10 +388,52 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> Exp()
     */
    public R visit(MoveStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+      String t1 = o1.code;
+      if (!currRegMap.containsKey(t1) && !callFlag) {
+          return _ret;
+      }
+
+      Return o2 = (Return)n.f2.accept(this, (A)s);
+
+      if (callFlag && !scope.equals("MAIN")) {
+          int j = currStackSpace + 1;
+          for (int i = 0; i < 4; ++i) {
+              r.code += "ASTORE SPILLEDARG " + (j - 1) + " " + ("a" + i) + "\n";
+              ++j;
+          }
+      }
+
+      if (!currRegMap.containsKey(t1) && callFlag) {
+          r.code += s.code;
+      }
+      else {
+          String reg1 = currRegMap.get(t1);
+          String exp1 = o2.code;
+          r.code += s.code;
+          if (isSpilled(reg1)) {
+              int _loc = Integer.parseInt(reg1);
+              r.code += "MOVE v0 " + exp1 + "\n";
+              r.code += "ASTORE SPILLEDARG " + (_loc - 1) + " v0\n";
+          }
+          else {
+              r.code += "MOVE " + reg1 + " " + exp1 + "\n";
+          }
+      }
+
+      if (callFlag && !scope.equals("MAIN")) {
+          int j = currStackSpace + 1;
+          for (int i = 0; i < 4; ++i) {
+              r.code += "ALOAD " + ("a" + i) + " SPILLEDARG " + (j - 1) + "\n";
+              ++j;
+          }
+      }
+      callFlag = false;
       return _ret;
    }
 
@@ -210,9 +442,23 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f1 -> SimpleExp()
     */
    public R visit(PrintStmt n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return obj = (Return)n.f1.accept(this, argu);
+
+      String exp = obj.code;
+      if (isTemp(exp)) {
+          String reg = currRegMap.get(exp);
+          if (isSpilled(reg)) {
+              int _loc = Integer.parseInt(reg);
+              reg = "v0";
+              r.code += "ALOAD " + reg + " SPILLEDARG " + (_loc - 1) + "\n";
+          }
+          exp = reg;
+      }
+      r.code += "PRINT " + exp + "\n";
       return _ret;
    }
 
@@ -223,8 +469,32 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     *       | SimpleExp()
     */
    public R visit(Exp n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+      Return s = (Return)argu;
+
+      R _ret = (R)r;
+      Return obj = (Return)n.f0.accept(this, argu);
+
+      if (simpleExpFlag) {
+          String exp = obj.code;
+          if (isTemp(exp)) {
+              String reg = currRegMap.get(exp);
+              if (isSpilled(reg)) {
+                  int _loc = Integer.parseInt(reg);
+                  reg = "v0";
+                  s.code += "ALOAD " + reg + " SPILLEDARG " + (_loc - 1) + "\n";
+              }
+              exp = reg;
+          }
+          else if (labelMap.get(scope).containsKey(exp)) {
+              exp = labelMap.get(scope).get(exp);
+          }
+          r.code = exp;
+          simpleExpFlag = false;
+      }
+      else {
+          r.code = obj.code;
+      }
       return _ret;
    }
 
@@ -236,12 +506,28 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> "END"
     */
    public R visit(StmtExp n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
-      n.f3.accept(this, argu);
+      Return o2 = (Return)n.f3.accept(this, argu);
       n.f4.accept(this, argu);
+
+      r.code += o1.code;
+
+      String exp = o2.code;
+      if (isTemp(exp)) {
+          String reg = currRegMap.get(exp);
+          if (isSpilled(reg)) {
+              int _loc = Integer.parseInt(reg);
+              reg = "v0";
+              r.code += "ALOAD " + reg + " SPILLEDARG " + (_loc - 1) + "\n";
+          }
+          exp = reg;
+      }
+      r.code += "MOVE v0 " + exp + "\n";
       return _ret;
    }
 
@@ -253,12 +539,58 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f4 -> ")"
     */
    public R visit(Call n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = (Return)argu;
+      r.code = "v0";
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
       n.f2.accept(this, argu);
+
+      argFlag = true;
       n.f3.accept(this, argu);
+      argFlag = false;
+
       n.f4.accept(this, argu);
+
+      for (int i = 0; i < argList.size(); ++i) {
+          String t = argList.get(i);
+          String reg = currRegMap.get(t);
+          if (reg.startsWith("a")) {
+              int j = currStackSpace + 1;
+              int idx = Integer.parseInt(reg.replaceAll("a", ""));
+              reg = "v0";
+              s.code += "ALOAD " + reg + " SPILLEDARG " + (j + idx - 1) + "\n";
+          }
+          else if (isSpilled(reg)) {
+              int _loc = Integer.parseInt(reg);
+              reg = "v0";
+              s.code += "ALOAD " + reg + " SPILLEDARG " + (_loc - 1) + "\n";
+          }
+          if (i < 4) {
+              s.code += "MOVE " + ("a" + i) + " " + reg + "\n";
+          }
+          else {
+              s.code += "PASSARG " + (i  - 3) + " " + reg + "\n";
+          }
+      }
+      currMaxArgs = (argList.size() > currMaxArgs) ? argList.size() : currMaxArgs;
+      argList = new ArrayList<>();
+
+      String exp = o1.code;
+      if (isTemp(exp)) {
+          String reg = currRegMap.get(exp);
+          if (isSpilled(reg)) {
+              int _loc = Integer.parseInt(reg);
+              reg = "v0";
+              s.code += "ALOAD " + reg + " SPILLEDARG " + (_loc - 1) + "\n";
+          }
+          exp = reg;
+      }
+      s.code += "CALL " + exp + "\n";
+      simpleExpFlag = false;
+      callFlag = true;
       return _ret;
    }
 
@@ -267,9 +599,25 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f1 -> SimpleExp()
     */
    public R visit(HAllocate n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+      Return s = (Return)argu;
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return o1 = (Return)n.f1.accept(this, argu);
+
+      String exp1 = o1.code;
+      if (isTemp(exp1)) {
+          String reg1 = currRegMap.get(exp1);
+          if (isSpilled(reg1)) {
+              int _loc = Integer.parseInt(reg1);
+              reg1 = "v0";
+              s.code += "ALOAD " + reg1 + " SPILLEDARG " + (_loc - 1) + "\n";
+          }
+          exp1 = reg1;
+      }
+      r.code = "HALLOCATE " + exp1;
+      simpleExpFlag = false;
       return _ret;
    }
 
@@ -279,10 +627,37 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f2 -> SimpleExp()
     */
    public R visit(BinOp n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
-      n.f2.accept(this, argu);
+      Return r = new Return();
+      Return s = (Return)argu;
+
+      R _ret = (R)r;
+      Return o1 = (Return)n.f0.accept(this, argu);
+      Return o2 = (Return)n.f1.accept(this, argu);
+      Return o3 = (Return)n.f2.accept(this, argu);
+
+      String freeReg = "v0";
+
+      String t1 = o2.code;
+      String reg1 = currRegMap.get(t1);
+      if (isSpilled(reg1)) {
+          int _loc = Integer.parseInt(reg1);
+          reg1 = freeReg;
+          s.code += "ALOAD " + reg1 + " SPILLEDARG " + (_loc - 1) + "\n";
+          freeReg = "v1";
+      }
+
+      String exp1 = o3.code;
+      if (isTemp(exp1)) {
+          String reg2 = currRegMap.get(exp1);
+          if (isSpilled(reg2)) {
+              int _loc = Integer.parseInt(reg2);
+              reg2 = freeReg;
+              s.code += "ALOAD " + reg2 + " SPILLEDARG " + (_loc - 1) + "\n";
+          }
+          exp1 = reg2;
+      }
+      r.code = o1.code + " " + reg1 + " " + exp1;
+      simpleExpFlag = false;
       return _ret;
    }
 
@@ -295,8 +670,17 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     *       | "DIV"
     */
    public R visit(Operator n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      switch(n.f0.which) {
+          case 0: r.code = "LE"; break;
+          case 1: r.code = "NE"; break;
+          case 2: r.code = "PLUS"; break;
+          case 3: r.code = "MINUS"; break;
+          case 4: r.code = "TIMES"; break;
+          case 5: r.code = "DIV"; break;
+      }
       return _ret;
    }
 
@@ -306,8 +690,8 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     *       | Label()
     */
    public R visit(SimpleExp n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      R _ret = n.f0.accept(this, argu);
+      simpleExpFlag = true;
       return _ret;
    }
 
@@ -316,9 +700,12 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f1 -> IntegerLiteral()
     */
    public R visit(Temp n, A argu) {
-      R _ret=null;
+      Return r = new Return();
+
+      R _ret = (R)r;
       n.f0.accept(this, argu);
-      n.f1.accept(this, argu);
+      Return obj = (Return)n.f1.accept(this, argu);
+      r.code = "TEMP " + obj.code;
       return _ret;
    }
 
@@ -326,8 +713,10 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> <INTEGER_LITERAL>
     */
    public R visit(IntegerLiteral n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      r.code = n.f0.toString();
       return _ret;
    }
 
@@ -335,8 +724,10 @@ public class Pass2<R,A> implements GJVisitor<R,A> {
     * f0 -> <IDENTIFIER>
     */
    public R visit(Label n, A argu) {
-      R _ret=null;
-      n.f0.accept(this, argu);
+      Return r = new Return();
+
+      R _ret = (R)r;
+      r.code = n.f0.toString();
       return _ret;
    }
 

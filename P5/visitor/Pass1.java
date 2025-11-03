@@ -30,7 +30,11 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
    HashSet<String> temporaries = new HashSet<>();     // stores all the temporaries used in the program
    public HashMap<String, HashMap<String, LiveRange>> liveRange = new HashMap<>(); // scope -> temp -> live range
-   
+
+   public HashMap<String, HashMap<String, String>> labelMap = new HashMap<>(); // scope -> old label -> new label
+   HashMap<String, String> currLabelMap = new HashMap<>();
+   int labelCount = 1;
+
    // for debugging
    void print_liveRange() {
        for (String _scope : scopeList) {
@@ -72,6 +76,7 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       if ( n.present() ) {
          String _label = (String)n.node.accept(this,argu);
          currScopeLabelIdx.put(_label, instr);
+         currLabelMap.put(_label, "L" + (labelCount++));
       }
       return null;
    }
@@ -112,6 +117,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
       
       labelIdx.put(scope, currScopeLabelIdx);
       currScopeLabelIdx = new HashMap<>();
+      labelMap.put(scope, currLabelMap);
+      currLabelMap = new HashMap<>();
       scope = new String();
 
       n.f3.accept(this, argu);
@@ -181,6 +188,20 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
                   int old_max = currLiveRange.get(_temp).max;
                   currLiveRange.get(_temp).max = (j > old_max) ? j : old_max;
               }
+              for (String _temp : currNode.out) {
+                  if (!currLiveRange.containsKey(_temp)) {
+                      LiveRange _obj = new LiveRange();
+                      _obj.min = j;
+                      _obj.temp = _temp;
+                      currLiveRange.put(_temp, _obj);
+                  }
+                  else {
+                      int old_in = currLiveRange.get(_temp).min;
+                      currLiveRange.get(_temp).min = (j < old_in) ? j : old_in;
+                  }
+                  int old_max = currLiveRange.get(_temp).max;
+                  currLiveRange.get(_temp).max = (j > old_max) ? j : old_max;
+              }
           }
 
           liveRange.put(currScope, currLiveRange);
@@ -220,6 +241,8 @@ public class Pass1<R,A> implements GJVisitor<R,A> {
 
       labelIdx.put(scope, currScopeLabelIdx);
       currScopeLabelIdx = new HashMap<>();
+      labelMap.put(scope, currLabelMap);
+      currLabelMap = new HashMap<>();
       scope = new String();
       return _ret;
    }
